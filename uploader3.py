@@ -108,7 +108,7 @@ def stop_lbrynet():
 def download_twitch_video(video_url, output_file):
     start_time = datetime.now()
     video_id = video_url.split("/")[-1] if "twitch.tv" in video_url else video_url
-    command = ["./TwitchDownloaderCLI", "videodownload", "--id", video_id, "-o", output_file, "--threads", "10", "--temp-path", "temp"]
+    command = ["./TwitchDownloaderCLI", "videodownload", "--id", video_id, "-o", output_file, "--threads", "20", "--temp-path", "temp"]
     logging.info(f"Скачиваю видео с ID {video_id} в {output_file}...")
     subprocess.run(command, check=True)
     end_time = datetime.now()

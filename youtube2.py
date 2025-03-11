@@ -83,7 +83,7 @@ def setup_credentials():
 def download_twitch_video(video_url, output_file):
     start_time = datetime.now()
     video_id = video_url.split("/")[-1] if "twitch.tv" in video_url else video_url
-    command = [TWITCH_DOWNLOADER_PATH, "videodownload", "--id", video_id, "-o", output_file, "--threads", "20"]
+    command = [TWITCH_DOWNLOADER_PATH, "videodownload", "--id", video_id, "-o", output_file, "--threads", "20", "--temp-path", "temp"]
     logging.debug(f"Выполняю команду: {' '.join(command)}")
     print(f"Начинаю скачивать файл {output_file}...")
     subprocess.run(command, check=True)
