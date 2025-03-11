@@ -81,12 +81,14 @@ def setup_credentials():
         logging.info(f"{TOKEN_FILE} успешно сохранен.")
         safe_print(f"{TOKEN_FILE} успешно сохранен.")
 
-# Функция для скачивания видео с Twitch с обновляемым прогресс-баром
+# Функция для скачивания видео с Twitch с обновляемым прогресс-баром через rich
 def download_twitch_video_rich(progress, task_id, video_url, output_file):
     start_time = datetime.now()
     video_id = video_url.split("/")[-1] if "twitch.tv" in video_url else video_url
-    command = [TWITCH_DOWNLOADER_PATH, "videodownload", "--id", video_id, "-o", output_file,
-               "--threads", "20", "--temp-path", "temp"]
+    command = [
+        TWITCH_DOWNLOADER_PATH, "videodownload", "--id", video_id, "-o", output_file,
+        "--threads", "20", "--temp-path", "temp"
+    ]
     logging.debug(f"Выполняю команду: {' '.join(command)}")
     try:
         proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -109,19 +111,24 @@ def download_twitch_video_rich(progress, task_id, video_url, output_file):
     retcode = proc.wait()
     if retcode != 0:
         raise subprocess.CalledProcessError(retcode, command)
+    # Обновляем до 100% и удаляем задачу, чтобы прогресс-бар исчез
     progress.update(task_id, completed=100)
+    progress.remove_task(task_id)
     end_time = datetime.now()
     download_time = (end_time - start_time).total_seconds()
     file_size = os.path.getsize(output_file) / (1024 * 1024)  # Размер в МБ
     speed = file_size / download_time if download_time > 0 else 0
-    msg = f"Файл {output_file} ({file_size:.2f} МБ) скачан за {int(download_time // 60)} мин {int(download_time % 60)} сек, скорость: {speed:.2f} МБ/с"
+    msg = (f"Файл {output_file} ({file_size:.2f} МБ) скачан за "
+           f"{int(download_time // 60)} мин {int(download_time % 60)} сек, скорость: {speed:.2f} МБ/с")
     logging.info(msg)
     safe_print(msg)
 
 # Функция для получения длительности видео
 def get_video_duration(video_file):
-    command = [FFPROBE_PATH, "-v", "error", "-show_entries", "format=duration",
-               "-of", "default=noprint_wrappers=1:nokey=1", video_file]
+    command = [
+        FFPROBE_PATH, "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", video_file
+    ]
     result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     return float(result.stdout.strip())
 
@@ -148,7 +155,10 @@ def split_single_video(video_file, max_duration=12*3600, safe_duration=10*3600):
     while start_time < duration:
         part_duration = min(safe_duration, duration - start_time)
         part_file = f"{video_file[:-4]}_part{part_num}.mp4"
-        command = [FFMPEG_PATH, "-i", video_file, "-ss", str(start_time), "-t", str(part_duration), "-c", "copy", part_file]
+        command = [
+            FFMPEG_PATH, "-i", video_file, "-ss", str(start_time),
+            "-t", str(part_duration), "-c", "copy", part_file
+        ]
         logging.info(f"Разделяю {video_file} на часть {part_num}...")
         safe_print(f"Разделяю {video_file} на часть {part_num}...")
         subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -192,7 +202,8 @@ def upload_to_youtube(video_file, title, description, tags):
     upload_time = (end_time - start_time).total_seconds()
     file_size = os.path.getsize(video_file) / (1024 * 1024)
     speed = file_size / upload_time if upload_time > 0 else 0
-    msg = f"Видео {video_file} ({file_size:.2f} МБ) загружено за {int(upload_time // 60)} мин {int(upload_time % 60)} сек, скорость: {speed:.2f} МБ/с"
+    msg = (f"Видео {video_file} ({file_size:.2f} МБ) загружено за "
+           f"{int(upload_time // 60)} мин {int(upload_time % 60)} сек, скорость: {speed:.2f} МБ/с")
     logging.info(msg)
     safe_print(msg)
 
@@ -298,8 +309,10 @@ def main(start_row=1, end_row=None, max_uploads=10, debug=False):
                 output_file = f"{video_id}.mp4"
                 if not os.path.exists(output_file):
                     task_id = progress.add_task(f"[{output_file}]", total=100)
-                    thread = threading.Thread(target=download_twitch_video_rich,
-                                              args=(progress, task_id, url, output_file))
+                    thread = threading.Thread(
+                        target=download_twitch_video_rich,
+                        args=(progress, task_id, url, output_file)
+                    )
                     download_threads.append(thread)
                     thread.start()
 
@@ -333,7 +346,10 @@ def main(start_row=1, end_row=None, max_uploads=10, debug=False):
                             break
                         part_number = part_index + 1
                         new_name = add_part_to_title(name, part_number)
-                        thread = threading.Thread(target=upload_to_youtube, args=(part_file, new_name, description, tags))
+                        thread = threading.Thread(
+                            target=upload_to_youtube,
+                            args=(part_file, new_name, description, tags)
+                        )
                         upload_threads.append(thread)
                         thread.start()
                         time.sleep(10)  # Задержка 10 секунд между загрузками
