@@ -50,10 +50,10 @@ def upload_video(youtube, file_path, title, description, tags, privacy_status="p
 
 # Запуск
 youtube = get_authenticated_service()
-file_path = "group_0.mp4"
-title = "Love Reset Day (15.02.2022)"  # Убедитесь, что заголовок не пустой
-description = "Games + Demos, Just Chatting, Monster Prom, VALORANT"
-tags = "unuasha, юняша, twitch, стрим, Games + Demos, Just Chatting, Monster Prom, VALORANT"  # Теги как строка
+file_path = "1804047298_part2.mp4"
+title = "Тянукус! День 2. Блеватрон! Часть 2 (09.03.2023)"  # Убедитесь, что заголовок не пустой
+description = "Just Chatting, The Looker, Inside"
+tags = "unuasha, юняша, twitch, стрим, Just Chatting, The Looker, Inside"  # Теги как строка
 privacy_status = "private"  # Статус приватности
 
 upload_video(youtube, file_path, title, description, tags, privacy_status)

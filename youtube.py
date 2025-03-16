@@ -9,6 +9,7 @@ import shutil
 import threading
 import time
 import re
+import math
 from datetime import datetime
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -24,6 +25,9 @@ STREAMS_FILE = "streams.xlsx"
 CLIENT_SECRETS_FILE = "client_secret.json"
 TOKEN_FILE = "token.json"
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+
+# Максимальная длительность видео для загрузки на YouTube: 11 часов 58 минут (43080 секунд)
+MAX_ALLOWED_DURATION = 11 * 3600 + 58 * 60
 
 # Настройка логирования
 logging.basicConfig(
@@ -87,7 +91,7 @@ def download_twitch_video_rich(progress, task_id, video_url, output_file):
     video_id = video_url.split("/")[-1] if "twitch.tv" in video_url else video_url
     command = [
         TWITCH_DOWNLOADER_PATH, "videodownload", "--id", video_id, "-o", output_file,
-        "--threads", "20", "--temp-path", "temp"
+        "--threads", "10", "--temp-path", "temp"
     ]
     logging.debug(f"Выполняю команду: {' '.join(command)}")
     try:
@@ -145,27 +149,54 @@ def concatenate_videos(video_files, output_file):
     logging.info(f"Видео объединено в {output_file}")
     safe_print(f"Видео объединено в {output_file}")
 
-# Функция для разделения видео на части
-def split_single_video(video_file, max_duration=12*3600, safe_duration=10*3600):
+# Функция для разбиения видео, длительность которого превышает MAX_ALLOWED_DURATION (11:58)
+def split_single_video(video_file):
     duration = get_video_duration(video_file)
-    parts = []
-    start_time = 0
-    part_num = 1
+    if duration <= MAX_ALLOWED_DURATION:
+        return [video_file]
 
-    while start_time < duration:
-        part_duration = min(safe_duration, duration - start_time)
+    # Определяем число частей, чтобы ни одна не превышала MAX_ALLOWED_DURATION
+    parts = int(math.ceil(duration / MAX_ALLOWED_DURATION))
+    split_points = []
+    if parts == 2:
+        # Для двух частей первая часть округляется вверх до целых часов, но не превышает MAX_ALLOWED_DURATION
+        first_part = math.ceil((duration / 2) / 3600) * 3600
+        if first_part > MAX_ALLOWED_DURATION:
+            first_part = MAX_ALLOWED_DURATION
+        split_points.append(first_part)
+    else:
+        # Для большего количества частей рассчитываем базовую длительность в целых часах
+        base = int(math.floor((duration / parts) / 3600)) * 3600
+        for i in range(parts - 1):
+            split_points.append(base)
+
+    part_files = []
+    start_time_sec = 0
+    part_num = 1
+    for sp in split_points:
         part_file = f"{video_file[:-4]}_part{part_num}.mp4"
+        logging.info(f"Разделяю {video_file} на часть {part_num} продолжительностью {sp/3600:.2f} ч (начало: {start_time_sec} сек)")
+        safe_print(f"Разделяю {video_file} на часть {part_num} продолжительностью {sp/3600:.2f} ч (начало: {start_time_sec} сек)")
         command = [
-            FFMPEG_PATH, "-i", video_file, "-ss", str(start_time),
-            "-t", str(part_duration), "-c", "copy", part_file
+            FFMPEG_PATH, "-i", video_file, "-ss", str(start_time_sec),
+            "-t", str(sp), "-c", "copy", part_file
         ]
-        logging.info(f"Разделяю {video_file} на часть {part_num}...")
-        safe_print(f"Разделяю {video_file} на часть {part_num}...")
         subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        parts.append(part_file)
-        start_time += part_duration
+        part_files.append(part_file)
+        start_time_sec += sp
         part_num += 1
-    return parts
+    # Обработка последней части (остаток)
+    if start_time_sec < duration:
+        part_file = f"{video_file[:-4]}_part{part_num}.mp4"
+        logging.info(f"Создаю последнюю часть {part_num} длительностью {(duration - start_time_sec)/3600:.2f} ч (начало: {start_time_sec} сек)")
+        safe_print(f"Создаю последнюю часть {part_num} длительностью {(duration - start_time_sec)/3600:.2f} ч (начало: {start_time_sec} сек)")
+        command = [
+            FFMPEG_PATH, "-i", video_file, "-ss", str(start_time_sec),
+            "-t", str(duration - start_time_sec), "-c", "copy", part_file
+        ]
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        part_files.append(part_file)
+    return part_files
 
 # Авторизация в YouTube API
 def get_authenticated_youtube_service():
@@ -334,11 +365,13 @@ def main(start_row=1, end_row=None, max_uploads=10, debug=False):
                 logging.info(f"Длительность видео {final_file}: {total_duration / 3600:.2f} часов")
                 safe_print(f"Длительность видео {final_file}: {total_duration / 3600:.2f} часов")
 
-                if total_duration <= 12 * 3600:
+                # Если длительность меньше или равна MAX_ALLOWED_DURATION (11:58), загружаем как есть
+                if total_duration <= MAX_ALLOWED_DURATION:
                     if uploaded_count < max_uploads:
                         upload_to_youtube(final_file, name, description, tags)
                         uploaded_count += 1
                 else:
+                    # Если видео длинное, разбиваем его на части по новому алгоритму
                     parts = split_single_video(final_file)
                     upload_threads = []
                     for part_index, part_file in enumerate(parts):
