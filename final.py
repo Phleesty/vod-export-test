@@ -16,7 +16,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google_auth_oauthlib.flow import InstalledAppFlow
-from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn, SpinnerColumn
 import argparse
 import logging
 
@@ -257,18 +257,20 @@ def process_video_row(index, row, config, do_vk, do_odysee, do_youtube):
 
     with Progress(transient=True) as progress:
         # Этап 1: Скачивание
-        download_task = progress.add_task("Fetching Video Info [1/4]", total=100)
-        threads = []
+        download_tasks = []
         for i, url in enumerate(video_urls):
-            thread = threading.Thread(target=download_twitch_video_rich, args=(progress, download_task, url, video_files[i]))
+            task = progress.add_task(f"Скачивание {video_files[i]}", total=100)
+            download_tasks.append((task, url, video_files[i]))
+        threads = []
+        for task_id, url, output_file in download_tasks:
+            thread = threading.Thread(target=download_twitch_video_rich, args=(progress, task_id, url, output_file))
             threads.append(thread)
             thread.start()
         for thread in threads:
             thread.join()
-        progress.update(download_task, completed=100)
 
         # Этап 2: Проверка и объединение
-        concat_task = progress.add_task("Verifying Parts [2/4]", total=100)
+        concat_task = progress.add_task(f"Объединение видео в {final_file}", total=100)
         if len(video_files) > 1:
             concatenate_videos(video_files, final_file, progress, concat_task)
         else:
@@ -279,13 +281,12 @@ def process_video_row(index, row, config, do_vk, do_odysee, do_youtube):
         total_duration = get_video_duration(final_file)
         youtube_files = [final_file]
         if total_duration > MAX_ALLOWED_DURATION and do_youtube:
-            split_task = progress.add_task("Preparing YouTube Parts [3/4]", total=100)
+            split_task = progress.add_task(f"Разбиение {final_file} для YouTube", total=100)
             youtube_files = split_single_video(final_file, progress, split_task)
         else:
-            progress.add_task("Preparing YouTube Parts [3/4]", total=100, completed=100)
+            progress.add_task("Разбиение для YouTube (не требуется)", total=100, completed=100)
 
         # Этап 4: Загрузка
-        upload_task = progress.add_task("Finalizing Video [4/4]", total=100)
         name = str(row.iloc[2]) if pd.notna(row.iloc[2]) else ""
         description = str(row.iloc[3]) if pd.notna(row.iloc[3]) else ""
         tags = str(row.iloc[4]) if pd.notna(row.iloc[4]) else ""
@@ -295,26 +296,30 @@ def process_video_row(index, row, config, do_vk, do_odysee, do_youtube):
         vk_privacy = "2" if privacy_value == "1" else "all"
         odysee_visibility = "unlisted" if privacy_value == "1" else "public"
 
+        upload_tasks = []
         threads = []
         if do_vk:
-            thread = threading.Thread(target=upload_video_to_vk, args=(config["vk_token"], config["vk_group_id"], final_file, config["vk_album_id"], name, description, vk_privacy, progress, upload_task))
+            vk_task = progress.add_task(f"Загрузка {final_file} на VK", total=100)
+            thread = threading.Thread(target=upload_video_to_vk, args=(config["vk_token"], config["vk_group_id"], final_file, config["vk_album_id"], name, description, vk_privacy, progress, vk_task))
             threads.append(thread)
             thread.start()
         if do_odysee:
-            thread = threading.Thread(target=upload_to_odysee, args=(final_file, claim_name, "@unuasha", thumbnail_url, name, description, tags, odysee_visibility, progress, upload_task))
+            odysee_task = progress.add_task(f"Загрузка {final_file} на Odysee", total=100)
+            thread = threading.Thread(target=upload_to_odysee, args=(final_file, claim_name, "@unuasha", thumbnail_url, name, description, tags, odysee_visibility, progress, odysee_task))
             threads.append(thread)
             thread.start()
         if do_youtube:
             for i, yt_file in enumerate(youtube_files):
                 yt_title = f"{name} Часть {i+1}" if len(youtube_files) > 1 else name
-                thread = threading.Thread(target=upload_to_youtube, args=(yt_file, yt_title, description, tags, progress, upload_task))
+                yt_task = progress.add_task(f"Загрузка {yt_file} на YouTube", total=100)
+                thread = threading.Thread(target=upload_to_youtube, args=(yt_file, yt_title, description, tags, progress, yt_task))
                 threads.append(thread)
                 thread.start()
         for thread in threads:
             thread.join()
 
     # Очистка
-    for file in video_files + youtube_files + [final_file]:
+    for file in video_files + youtube_files + ([final_file] if final_file not in video_files else []):
         if os.path.exists(file):
             os.remove(file)
 
