@@ -92,7 +92,7 @@ def download_twitch_video_rich(progress, task_id, video_url, output_file):
     video_id = video_url.split("/")[-1] if "twitch.tv" in video_url else video_url
     command = [
         TWITCH_DOWNLOADER_PATH, "videodownload", "--id", video_id, "-o", output_file,
-        "--threads", "4", "--temp-path", "temp"
+        "--threads", "20", "--temp-path", "temp"
     ]
     logging.debug(f"Выполняю команду: {' '.join(command)}")
     try:
@@ -154,11 +154,11 @@ def format_timestamp(seconds):
     else:
         return f"{minutes:02d}:{seconds:02d}"
 
-# Новая функция: создание описания из глав
+# Новая функция: создание описания из глав (исправленная версия)
 def create_description_from_chapters(chapters):
     description = ""
     for chapter in chapters:
-        start_time = chapter["start_time"]
+        start_time = float(chapter["start_time"])  # Преобразуем строку в float
         title = chapter["tags"].get("title", "Untitled")
         timestamp = format_timestamp(start_time)
         description += f"{timestamp} - {title}\n"
@@ -173,8 +173,9 @@ def create_concat_metadata(video_files):
         chapters = get_chapters(video_file)
         for chapter in chapters:
             adjusted_chapter = chapter.copy()
-            adjusted_chapter["start_time"] += cumulative_duration
-            adjusted_chapter["end_time"] += cumulative_duration
+            # Преобразуем строки в float перед сложением
+            adjusted_chapter["start_time"] = float(adjusted_chapter["start_time"]) + cumulative_duration
+            adjusted_chapter["end_time"] = float(adjusted_chapter["end_time"]) + cumulative_duration
             all_chapters.append(adjusted_chapter)
         cumulative_duration += duration
     metadata_content = ";FFMETADATA1\n"

@@ -50,10 +50,10 @@ def upload_video(youtube, file_path, title, description, tags, privacy_status="p
 
 # Запуск
 youtube = get_authenticated_service()
-file_path = "1804047298_part2.mp4"
-title = "Тянукус! День 2. Блеватрон! Часть 2 (09.03.2023)"  # Убедитесь, что заголовок не пустой
-description = "Just Chatting, The Looker, Inside"
-tags = "unuasha, юняша, twitch, стрим, Just Chatting, The Looker, Inside"  # Теги как строка
+file_path = "1804052837.mp4"
+title = "Тянукус! День 16. тихохолмие... Часть 2 (23.03.2023)"  # Убедитесь, что заголовок не пустой
+description = "Just Chatting, Silent Hill 2"
+tags = "unuasha, юняша, twitch, стрим, Just Chatting, Silent Hill 2"  # Теги как строка
 privacy_status = "private"  # Статус приватности
 
 upload_video(youtube, file_path, title, description, tags, privacy_status)
