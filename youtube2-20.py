@@ -158,7 +158,7 @@ def format_timestamp(seconds):
 def create_description_from_chapters(chapters):
     description = ""
     for chapter in chapters:
-        start_time = float(chapter["start_time"])  # Преобразуем строку в float
+        start_time = float(chapter["start_time"])
         title = chapter["tags"].get("title", "Untitled")
         timestamp = format_timestamp(start_time)
         description += f"{timestamp} - {title}\n"
@@ -173,14 +173,13 @@ def create_concat_metadata(video_files):
         chapters = get_chapters(video_file)
         for chapter in chapters:
             adjusted_chapter = chapter.copy()
-            # Преобразуем строки в float перед сложением
             adjusted_chapter["start_time"] = float(adjusted_chapter["start_time"]) + cumulative_duration
             adjusted_chapter["end_time"] = float(adjusted_chapter["end_time"]) + cumulative_duration
             all_chapters.append(adjusted_chapter)
         cumulative_duration += duration
     metadata_content = ";FFMETADATA1\n"
     for chapter in all_chapters:
-        start = int(chapter["start_time"] * 1000)  # в миллисекундах
+        start = int(chapter["start_time"] * 1000)
         end = int(chapter["end_time"] * 1000)
         title = chapter["tags"].get("title", "Untitled")
         metadata_content += f"[CHAPTER]\nTIMEBASE=1/1000\nSTART={start}\nEND={end}\ntitle={title}\n"
@@ -213,18 +212,15 @@ def split_single_video(video_file):
     if duration <= MAX_ALLOWED_DURATION:
         return [video_file]
 
-    # Определяем количество частей
     parts = int(math.ceil(duration / MAX_ALLOWED_DURATION))
     split_points = []
 
     if parts == 2:
-        # Для двух частей: первая округляется до целых часов, вычитаем 1 секунду
         first_part = math.ceil((duration / 2) / 3600) * 3600 - 1
         if first_part > MAX_ALLOWED_DURATION:
             first_part = MAX_ALLOWED_DURATION - 1
         split_points.append(first_part)
     else:
-        # Для большего числа частей: базовая длительность в целых часах, вычитаем 1 секунду
         base = int(math.floor((duration / parts) / 3600)) * 3600 - 1
         for i in range(parts - 1):
             split_points.append(base)
@@ -233,7 +229,6 @@ def split_single_video(video_file):
     start_time_sec = 0
     part_num = 1
 
-    # Обработка частей, которые округляются
     for sp in split_points:
         part_file = f"{video_file[:-4]}_part{part_num}.mp4"
         logging.info(f"Разделяю {video_file} на часть {part_num} продолжительностью {sp/3600:.2f} ч")
@@ -247,7 +242,6 @@ def split_single_video(video_file):
         start_time_sec += sp
         part_num += 1
 
-    # Обработка последней части (остаток) без вычитания
     if start_time_sec < duration:
         remaining_duration = duration - start_time_sec
         part_file = f"{video_file[:-4]}_part{part_num}.mp4"
@@ -415,39 +409,35 @@ def main(start_row=1, end_row=None, max_uploads=10, debug=False):
 
             grouped_files = smart_group_and_concatenate(video_files)
 
+            # Собираем все файлы для загрузки с нумерацией
+            files_to_upload = []
             for final_file in grouped_files:
                 total_duration = get_video_duration(final_file)
                 logging.info(f"Длительность видео {final_file}: {total_duration / 3600:.2f} часов")
                 safe_print(f"Длительность видео {final_file}: {total_duration / 3600:.2f} часов")
 
                 if total_duration <= MAX_ALLOWED_DURATION:
-                    chapters = get_chapters(final_file)
-                    if chapters:
-                        description = create_description_from_chapters(chapters)
-                    else:
-                        description = str(row.iloc[3]) if pd.notna(row.iloc[3]) else ""
-                    if uploaded_count < max_uploads:
-                        upload_to_youtube(final_file, name, description, tags)
-                        uploaded_count += 1
+                    files_to_upload.append(final_file)
                 else:
                     parts = split_single_video(final_file)
-                    for part_index, part_file in enumerate(parts):
-                        if uploaded_count >= max_uploads:
-                            break
-                        chapters = get_chapters(part_file)
-                        if chapters:
-                            description = create_description_from_chapters(chapters)
-                        else:
-                            description = str(row.iloc[3]) if pd.notna(row.iloc[3]) else ""
-                        part_number = part_index + 1
-                        new_name = add_part_to_title(name, part_number)
-                        upload_to_youtube(part_file, new_name, description, tags)
-                        uploaded_count += 1
-                        time.sleep(10)
+                    files_to_upload.extend(parts)
 
-                    for part_file in parts:
-                        os.remove(part_file)
+            # Загружаем файлы с номерами частей
+            for part_index, upload_file in enumerate(files_to_upload):
+                if uploaded_count >= max_uploads:
+                    break
+                chapters = get_chapters(upload_file)
+                if chapters:
+                    description = create_description_from_chapters(chapters)
+                else:
+                    description = str(row.iloc[3]) if pd.notna(row.iloc[3]) else ""
+                part_number = part_index + 1
+                new_name = add_part_to_title(name, part_number)
+                upload_to_youtube(upload_file, new_name, description, tags)
+                uploaded_count += 1
+                time.sleep(10)
 
+            # Удаляем временные файлы
             logging.info("Удаляю временные файлы...")
             safe_print("Удаляю временные файлы...")
             for video_file in video_files:
@@ -456,6 +446,9 @@ def main(start_row=1, end_row=None, max_uploads=10, debug=False):
             for grouped_file in grouped_files:
                 if os.path.exists(grouped_file) and grouped_file not in video_files:
                     os.remove(grouped_file)
+            for upload_file in files_to_upload:
+                if os.path.exists(upload_file) and upload_file not in video_files and upload_file not in grouped_files:
+                    os.remove(upload_file)
 
     logging.info("Задача выполнена!")
     safe_print("Задача выполнена!")
