@@ -11,9 +11,10 @@ import argparse
 import logging
 import zipfile
 import urllib.request
+import sys
 from requests_toolbelt import MultipartEncoder
 
-# Константы
+# Константы остаются без изменений
 CONFIG_FILE = "config.json"
 INSTALLED_FILE = ".installed"
 TWITCH_DOWNLOADER_URL = "https://github.com/lay295/TwitchDownloader/releases/download/1.55.2/TwitchDownloaderCLI-1.55.2-Linux-x64.zip"
@@ -95,24 +96,46 @@ def stop_lbrynet():
     subprocess.run(["lbrynet", "stop"])
     time.sleep(5)
 
-def download_twitch_video(video_url, output_file, log_file):
+def download_twitch_video(video_url, output_file, progress_dict, lock, thread_id):
     start_time = datetime.now()
     video_id = video_url.split("/")[-1] if "twitch.tv" in video_url else video_url
     command = [
         "TwitchDownloaderCLI/TwitchDownloaderCLI", "videodownload", "--id", video_id, "-o", output_file,
         "--threads", "20", "--temp-path", "temp"
     ]
-    with open(log_file, "w") as f:
-        process = subprocess.Popen(command, stdout=f, stderr=subprocess.STDOUT, text=True)
-    process.wait()
+    logging.info(f"Скачиваю видео с ID {video_id} в {output_file}...")
+    
+    # Запускаем процесс и перенаправляем вывод в PIPE
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    
+    # Читаем вывод построчно в реальном времени
+    while process.poll() is None:
+        line = process.stdout.readline().strip()
+        if line and "may not have enough free space" not in line:  # Фильтруем ненужные строки
+            with lock:
+                progress_dict[thread_id] = line  # Сохраняем последнюю строку прогресса для этого потока
+    
+    # После завершения процесса фиксируем итоговую информацию
     end_time = datetime.now()
     download_time = (end_time - start_time).total_seconds()
-    file_size = os.path.getsize(output_file) / (1024 * 1024) if os.path.exists(output_file) else 0
+    file_size = os.path.getsize(output_file) / (1024 * 1024)
     speed = file_size / download_time if download_time > 0 else 0
     msg = (f"Файл {output_file} ({file_size:.2f} МБ) скачан за "
            f"{int(download_time // 60)} мин {int(download_time % 60)} сек, скорость: {speed:.2f} МБ/с")
+    with lock:
+        progress_dict[thread_id] = msg  # Сохраняем финальное сообщение
     logging.info(msg)
-    return process.returncode == 0
+
+def display_progress(progress_dict, lock, stop_event):
+    """Отображает прогресс для всех потоков в консоли."""
+    while not stop_event.is_set():
+        with lock:
+            print("\033[2J\033[H")  # Очищаем консоль и возвращаем курсор в начало
+            for thread_id, progress in progress_dict.items():
+                if progress:
+                    print(f"[Thread {thread_id}] {progress}")
+            sys.stdout.flush()
+        time.sleep(0.1)  # Обновляем каждые 0.1 секунды
 
 def concatenate_videos(video_files, output_file):
     logging.info("Объединение файлов...")
@@ -282,8 +305,6 @@ def main(start_row=1, end_row=None, do_vk_upload=True, do_odysee_upload=True, de
     else:
         config = setup_config()
 
-    TWITCH_DOWNLOADER_PATH = "TwitchDownloaderCLI/TwitchDownloaderCLI"
-    FFMPEG_PATH = "ffmpeg"
     STREAMS_FILE = config["streams_file"]
     VK_TOKEN = config["vk_token"]
     VK_GROUP_ID = config["vk_group_id"]
@@ -299,21 +320,9 @@ def main(start_row=1, end_row=None, do_vk_upload=True, do_odysee_upload=True, de
     logging.info("Очистка старых видеофайлов и blob-файлов перед запуском...")
     for file in os.listdir():
         if file.endswith(".mp4"):
-            try:
-                os.remove(file)
-                if debug:
-                    logging.debug(f"DEBUG: Удален файл {file}")
-            except Exception as e:
-                if debug:
-                    logging.debug(f"DEBUG: Не удалось удалить {file}: {e}")
+            os.remove(file)
     if os.path.exists(BLOBFILES_PATH):
-        try:
-            shutil.rmtree(BLOBFILES_PATH, ignore_errors=True)
-            if debug:
-                logging.debug(f"DEBUG: Удалена директория {BLOBFILES_PATH}")
-        except Exception as e:
-            if debug:
-                logging.debug(f"DEBUG: Не удалось удалить {BLOBFILES_PATH}: {e}")
+        shutil.rmtree(BLOBFILES_PATH, ignore_errors=True)
 
     if do_odysee_upload:
         start_lbrynet()
@@ -336,47 +345,35 @@ def main(start_row=1, end_row=None, do_vk_upload=True, do_odysee_upload=True, de
 
         video_urls = row.iloc[1].split()
         video_files = [f"video_{index + 1}_{i}.mp4" for i, url in enumerate(video_urls)]
-        log_files = [f"log_{index + 1}_{i}.txt" for i in range(len(video_urls))]
         
+        # Инициализируем словарь для хранения прогресса и блокировку
+        progress_dict = {i: "" for i in range(len(video_urls))}
+        lock = threading.Lock()
+        stop_event = threading.Event()
+
+        # Запускаем поток для отображения прогресса
+        display_thread = threading.Thread(target=display_progress, args=(progress_dict, lock, stop_event))
+        display_thread.start()
+
         # Запускаем загрузку видео в потоках
-        download_threads = []
+        threads = []
         for i, url in enumerate(video_urls):
-            thread = threading.Thread(target=download_twitch_video, args=(url, video_files[i], log_files[i]))
-            download_threads.append(thread)
+            thread = threading.Thread(target=download_twitch_video, args=(url, video_files[i], progress_dict, lock, i))
+            threads.append(thread)
             thread.start()
-
-        # Читаем логи в реальном времени
-        completed = [False] * len(video_urls)
-        while not all(completed):
-            for i, log_file in enumerate(log_files):
-                if not os.path.exists(log_file) or completed[i]:
-                    continue
-                with open(log_file, "r") as f:
-                    lines = f.readlines()
-                    for line in lines:
-                        # Фильтруем предупреждения о нехватке места
-                        if "may not have enough free space" not in line:
-                            print(f"[{video_files[i]}] {line.strip()}")
-                # Проверяем, завершился ли процесс
-                if download_threads[i].is_alive():
-                    time.sleep(0.1)  # Небольшая задержка для уменьшения нагрузки
-                else:
-                    completed[i] = True
-                    # Выводим последнюю информацию из лога после завершения
-                    with open(log_file, "r") as f:
-                        lines = f.readlines()
-                        for line in lines[-5:]:  # Последние 5 строк для точности
-                            if "may not have enough free space" not in line:
-                                print(f"[{video_files[i]}] {line.strip()}")
-            time.sleep(0.5)  # Задержка для обновления вывода
-
-        for thread in download_threads:
+        
+        # Ждем завершения всех потоков загрузки
+        for thread in threads:
             thread.join()
+        
+        # Останавливаем отображение прогресса
+        stop_event.set()
+        display_thread.join()
 
-        # Удаляем временные лог-файлы
-        for log_file in log_files:
-            if os.path.exists(log_file):
-                os.remove(log_file)
+        # Очищаем консоль после завершения загрузки
+        print("\033[2J\033[H")
+        for i in range(len(video_urls)):
+            print(f"[Thread {i}] {progress_dict[i]}")
 
         if len(video_files) > 1:
             final_file = f"concatenated_{index + 1}.mp4"
@@ -388,11 +385,7 @@ def main(start_row=1, end_row=None, do_vk_upload=True, do_odysee_upload=True, de
             video_file = video_files[0]
 
         name = str(row.iloc[2]) if pd.notna(row.iloc[2]) else ""
-        chapters = get_chapters(video_file)
-        if chapters:
-            description = create_description_from_chapters(chapters)
-        else:
-            description = str(row.iloc[3]) if pd.notna(row.iloc[3]) else ""
+        description = str(row.iloc[3]) if pd.notna(row.iloc[3]) else ""
         tags = str(row.iloc[4]) if pd.notna(row.iloc[4]) else ""
         claim_name = str(row.iloc[5]) if pd.notna(row.iloc[5]) else "default_claim_name"
         thumbnail_url = str(row.iloc[6]) if pd.notna(row.iloc[6]) else ""
