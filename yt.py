@@ -409,7 +409,7 @@ def main(start_row=1, end_row=None, max_uploads=10, debug=False):
 
             grouped_files = smart_group_and_concatenate(video_files)
 
-            # Собираем все файлы для загрузки с нумерацией
+            # Собираем все файлы для загрузки
             files_to_upload = []
             for final_file in grouped_files:
                 total_duration = get_video_duration(final_file)
@@ -422,7 +422,7 @@ def main(start_row=1, end_row=None, max_uploads=10, debug=False):
                     parts = split_single_video(final_file)
                     files_to_upload.extend(parts)
 
-            # Загружаем файлы с номерами частей
+            # Загружаем файлы с номерами частей только если их больше одного
             for part_index, upload_file in enumerate(files_to_upload):
                 if uploaded_count >= max_uploads:
                     break
@@ -431,8 +431,11 @@ def main(start_row=1, end_row=None, max_uploads=10, debug=False):
                     description = create_description_from_chapters(chapters)
                 else:
                     description = str(row.iloc[3]) if pd.notna(row.iloc[3]) else ""
-                part_number = part_index + 1
-                new_name = add_part_to_title(name, part_number)
+                if len(files_to_upload) > 1:
+                    part_number = part_index + 1
+                    new_name = add_part_to_title(name, part_number)
+                else:
+                    new_name = name  # Используем базовое название, если файл один
                 upload_to_youtube(upload_file, new_name, description, tags)
                 uploaded_count += 1
                 time.sleep(10)
