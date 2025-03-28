@@ -384,8 +384,13 @@ def main(start_row=1, end_row=None, do_vk_upload=True, do_odysee_upload=True, de
         else:
             video_file = video_files[0]
 
+        # Установка параметров видео
         name = str(row.iloc[2]) if pd.notna(row.iloc[2]) else ""
-        description = str(row.iloc[3]) if pd.notna(row.iloc[3]) else ""
+        chapters = get_chapters(video_file)
+        if chapters:
+            description = create_description_from_chapters(chapters)
+        else:
+            description = str(row.iloc[3]) if pd.notna(row.iloc[3]) else ""
         tags = str(row.iloc[4]) if pd.notna(row.iloc[4]) else ""
         claim_name = str(row.iloc[5]) if pd.notna(row.iloc[5]) else "default_claim_name"
         thumbnail_url = str(row.iloc[6]) if pd.notna(row.iloc[6]) else ""
