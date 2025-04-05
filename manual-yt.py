@@ -51,7 +51,7 @@ def upload_video(youtube, file_path, title, description, tags, privacy_status="p
 # Запуск
 youtube = get_authenticated_service()
 file_path = "group_0.mp4"
-title = "ПEРВОЕ ПРОХОЖДЕНИЕ БЕЗ ПОДСКАЗОК БЕЗ КУЗНЕЦА БЕЗ ОСВАЛЬДА БЕЗ ТОРГОВЦА ФУЛЛ ФОКУС (18.02.2025)"  # Убедитесь, что заголовок не пустой
+title = "ПEРВОЕ ПРОХОЖДЕНИЕ БЕЗ ХРАНИТЕЛЬНИЦЫ БЕЗ КУЗНЕЦА БЕЗ ОСВАЛЬДА БЕЗ ТОРГОВЦА (26.02.2025)"  # Убедитесь, что заголовок не пустой
 description = "Just Chatting, Dark Souls: Remastered"
 tags = "unuasha, юняша, twitch, стрим, Just Chatting, Dark Souls: Remastered"  # Теги как строка
 privacy_status = "private"  # Статус приватности
