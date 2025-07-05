@@ -12,57 +12,33 @@ import logging
 import zipfile
 import urllib.request
 import sys
-import re
 from requests_toolbelt import MultipartEncoder
 
-# Константы остаются без изменений для lbrynet
+# Константы остаются без изменений
 CONFIG_FILE = "config.json"
 INSTALLED_FILE = ".installed"
+# TWITCH_DOWNLOADER_URL = "https://github.com/lay295/TwitchDownloader/releases/download/1.55.2/TwitchDownloaderCLI-1.55.2-Linux-x64.zip"
 LBRYNET_URL = "https://github.com/lbryio/lbry-sdk/releases/latest/download/lbrynet-linux.zip"
 
-# Функция для получения последнего URL TwitchDownloaderCLI через GitHub API
-
-def get_latest_twitchdownloader_url():
+def get_latest_twitch_downloader_url():
+    """Получает ссылку на последнюю версию TwitchDownloaderCLI для Linux x64 с GitHub."""
     api_url = "https://api.github.com/repos/lay295/TwitchDownloader/releases/latest"
-    headers = {}
-    token = os.environ.get("GITHUB_TOKEN")
-    if token:
-        headers["Authorization"] = f"token {token}"
-    resp = requests.get(api_url, headers=headers)
-    resp.raise_for_status()
-    release = resp.json()
-    pattern = re.compile(r"^TwitchDownloaderCLI-[\d\.]+-Linux-x64\.zip$")
-    for asset in release.get("assets", []):
+    response = requests.get(api_url)
+    response.raise_for_status()
+    release_data = response.json()
+    for asset in release_data.get("assets", []):
         name = asset.get("name", "")
-        if pattern.match(name):
+        if name.endswith("Linux-x64.zip") and name.startswith("TwitchDownloaderCLI-"):
             return asset["browser_download_url"]
-    raise RuntimeError("Не удалось найти TwitchDownloaderCLI Linux-x64 в ассетах релиза")
-
+    raise Exception("Не удалось найти подходящий TwitchDownloaderCLI для Linux x64")
 
 def install_dependencies():
-    logging.info("Скачивание lbrynet...")
-    urllib.request.urlretrieve(LBRYNET_URL, "lbrynet.zip")
-    with zipfile.ZipFile("lbrynet.zip", "r") as zip_ref:
-        zip_ref.extractall(".")
-    os.remove("lbrynet.zip")
-    subprocess.run(["chmod", "+x", "lbrynet"], check=True)
-    subprocess.run(["sudo", "mv", "lbrynet", "/usr/local/bin/"], check=True)
-
-    # Скачиваем и устанавливаем TwitchDownloaderCLI
-    td_url = get_latest_twitchdownloader_url()
-    logging.info(f"Скачивание TwitchDownloaderCLI из {td_url}...")
-    urllib.request.urlretrieve(td_url, "twitchdownloader.zip")
-    with zipfile.ZipFile("twitchdownloader.zip", "r") as zip_ref:
+    logging.info("Скачивание TwitchDownloaderCLI...")
+    twitch_url = get_latest_twitch_downloader_url()
+    urllib.request.urlretrieve(twitch_url, "TwitchDownloaderCLI.zip")
+    with zipfile.ZipFile("TwitchDownloaderCLI.zip", "r") as zip_ref:
         zip_ref.extractall("TwitchDownloaderCLI")
-    os.remove("twitchdownloader.zip")
-    # Даем права на исполняемый файл
-    exe_path = os.path.join("TwitchDownloaderCLI", "TwitchDownloaderCLI")
-    subprocess.run(["chmod", "+x", exe_path], check=True)
-
-    with open(INSTALLED_FILE, "w") as f:
-        f.write("Dependencies installed")
-
-def install_dependencies():
+    os.remove("TwitchDownloaderCLI.zip")
     logging.info("Скачивание lbrynet...")
     urllib.request.urlretrieve(LBRYNET_URL, "lbrynet.zip")
     with zipfile.ZipFile("lbrynet.zip", "r") as zip_ref:
@@ -70,7 +46,6 @@ def install_dependencies():
     os.remove("lbrynet.zip")
     subprocess.run(["chmod", "+x", "lbrynet"], check=True)
     subprocess.run(["sudo", "mv", "lbrynet", "/usr/local/bin/"], check=True)
-    
     with open(INSTALLED_FILE, "w") as f:
         f.write("Dependencies installed")
 
