@@ -177,7 +177,7 @@ def upload_video_to_vk(token, group_id, video_path, album_id, name, description,
         "privacy_view": privacy_view,
         "privacy_comment": "all"
     }
-    response = requests.get("https://api.vk.com/method/video.save", params=params).json()
+    response = requests.get("https://api.vk.ru/method/video.save", params=params).json()
     if "error" in response:
         raise Exception(f"Ошибка VK API: {response['error']['error_msg']}")
     upload_url = response["response"]["upload_url"]
