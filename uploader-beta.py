@@ -120,7 +120,7 @@ def ensure_twitch_downloader():
 
 def get_video_duration(video_file: str) -> float:
     cmd = [
-        F FPROBE_PATH, "-v", "error", "-show_entries", "format=duration",
+        FFPROBE_PATH, "-v", "error", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", video_file
     ]
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
