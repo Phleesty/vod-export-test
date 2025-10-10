@@ -98,21 +98,72 @@ def get_latest_twitch_downloader_url():
     raise RuntimeError("Не найден подходящий TwitchDownloaderCLI для Linux x64")
 
 def ensure_twitch_downloader():
-    if not os.path.exists(TWITCH_DOWNLOADER_PATH):
-        os.makedirs(TWITCH_DOWNLOADER_DIR, exist_ok=True)
-        print("Скачиваю TwitchDownloaderCLI (последняя версия)...")
-        url = get_latest_twitch_downloader_url()
-        zip_path = os.path.join(TWITCH_DOWNLOADER_DIR, "TwitchDownloaderCLI.zip")
-        urllib.request.urlretrieve(url, zip_path)
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(TWITCH_DOWNLOADER_DIR)
-        os.remove(zip_path)
-        # делаем бинарник исполняемым
-        try:
-            os.chmod(TWITCH_DOWNLOADER_PATH, 0o755)
-        except Exception:
-            pass
-        print("TwitchDownloaderCLI загружен!")
+    """
+    Скачивает и устанавливает TwitchDownloaderCLI если его нет.
+    """
+    if os.path.exists(TWITCH_DOWNLOADER_PATH):
+        print(f"✓ TwitchDownloaderCLI уже установлен: {TWITCH_DOWNLOADER_PATH}")
+        return
+    
+    print("=== Установка TwitchDownloaderCLI ===")
+    os.makedirs(TWITCH_DOWNLOADER_DIR, exist_ok=True)
+    
+    # Получаем URL последнего релиза
+    print("Получение информации о последней версии...")
+    url = get_latest_twitch_downloader_url()
+    print(f"Найден релиз: {url}")
+    
+    # Скачиваем ZIP
+    zip_path = os.path.join(TWITCH_DOWNLOADER_DIR, "temp.zip")
+    print(f"Скачивание...")
+    urllib.request.urlretrieve(url, zip_path)
+    
+    # Распаковываем ZIP
+    print("Распаковка архива...")
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        # Показываем содержимое архива для отладки
+        file_list = zf.namelist()
+        print(f"Файлов в архиве: {len(file_list)}")
+        
+        # Распаковываем все файлы
+        zf.extractall(TWITCH_DOWNLOADER_DIR)
+    
+    # Удаляем ZIP
+    os.remove(zip_path)
+    
+    # Ищем исполняемый файл TwitchDownloaderCLI в распакованных файлах
+    found = False
+    for root, dirs, files in os.walk(TWITCH_DOWNLOADER_DIR):
+        if "TwitchDownloaderCLI" in files:
+            source_path = os.path.join(root, "TwitchDownloaderCLI")
+            # Если файл не в корне TWITCH_DOWNLOADER_DIR, перемещаем его
+            if source_path != TWITCH_DOWNLOADER_PATH:
+                shutil.move(source_path, TWITCH_DOWNLOADER_PATH)
+                print(f"Перемещен: {source_path} → {TWITCH_DOWNLOADER_PATH}")
+            found = True
+            break
+    
+    if not found:
+        # Показываем структуру для диагностики
+        print("\nСодержимое директории после распаковки:")
+        for root, dirs, files in os.walk(TWITCH_DOWNLOADER_DIR):
+            level = root.replace(TWITCH_DOWNLOADER_DIR, '').count(os.sep)
+            indent = ' ' * 2 * level
+            print(f'{indent}{os.path.basename(root)}/')
+            subindent = ' ' * 2 * (level + 1)
+            for file in files:
+                print(f'{subindent}{file}')
+        raise RuntimeError(f"Ошибка: исполняемый файл TwitchDownloaderCLI не найден после распаковки")
+    
+    # Делаем файл исполняемым
+    try:
+        os.chmod(TWITCH_DOWNLOADER_PATH, 0o755)
+        print(f"✓ Установлены права на исполнение")
+    except Exception as e:
+        print(f"⚠ Предупреждение: не удалось установить права: {e}")
+    
+    print(f"✓ TwitchDownloaderCLI успешно установлен: {TWITCH_DOWNLOADER_PATH}\n")
+
 
 ###############################################################################
 # Вспомогательные функции (ffprobe/ffmpeg)
