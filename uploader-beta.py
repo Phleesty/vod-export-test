@@ -54,6 +54,10 @@ def save_config(config: dict):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
 
+def log_print(msg: str):
+    now = datetime.now().strftime("[%H:%M:%S]")
+    print(f"{now} {msg}")
+
 def setup_vkontakte_config():
     """
     Обеспечивает наличие vk_token, vk_group_id, vk_album_id в config.json (если нужна загрузка в VK).
@@ -230,7 +234,7 @@ def create_concat_metadata(video_files):
     return meta_file
 
 def concatenate_videos(video_files, output_file, metadata_file=None):
-    print("Объединяю файлы...")
+    log_print("Объединяю файлы...")
     with open("concat_list.txt", "w", encoding="utf-8") as f:
         for vf in video_files:
             f.write(f"file '{vf}'\n")
@@ -242,7 +246,7 @@ def concatenate_videos(video_files, output_file, metadata_file=None):
     os.remove("concat_list.txt")
     if metadata_file and os.path.exists(metadata_file):
         os.remove(metadata_file)
-    print(f"Видео объединено в {output_file}")
+    log_print(f"Видео объединено в {output_file}")
 
 def split_single_video(video_file, max_dur=MAX_ALLOWED_DURATION):
     duration = get_video_duration(video_file)
@@ -379,7 +383,7 @@ def generate_streams_xlsx(username, count, output_file=STREAMS_FILE):
     # порядок колонок фиксируем
     df = pd.DataFrame(rows, columns=["B", "C", "D", "E", "F", "I"])
     df.to_excel(output_file, index=False, engine="openpyxl")
-    print(f"Собрано {len(rows)} видео. Таблица сохранена в {output_file}")
+    log_print(f"Собрано {len(rows)} видео. Таблица сохранена в {output_file}")
 
 ###############################################################################
 # Загрузка в VK и YouTube
@@ -435,7 +439,7 @@ def get_authenticated_youtube_service():
     return build("youtube", "v3", credentials=credentials)
 
 def upload_to_youtube(video_file, title, description, tags):
-    print(f"Загружаю {video_file} на YouTube...")
+    log_print(f"Загружаю {video_file} на YouTube...")
     logging.info(f"Загрузка {video_file} на YouTube")
     start = datetime.now()
     youtube = get_authenticated_youtube_service()
@@ -453,7 +457,7 @@ def upload_to_youtube(video_file, title, description, tags):
     _ = request.execute()
     elapsed = (datetime.now() - start).total_seconds()
     size_mb = os.path.getsize(video_file) / (1024 * 1024)
-    print(f"  {video_file} ({size_mb:.2f} MB) загружено на YouTube за {int(elapsed//60)} мин {int(elapsed%60)} сек.")
+    log_print(f"  {video_file} ({size_mb:.2f} MB) загружено на YouTube за {int(elapsed//60)} мин {int(elapsed%60)} сек.")
 
 def add_part_to_title(title, part_number):
     title = title or ""
@@ -471,13 +475,14 @@ def add_part_to_title(title, part_number):
 
 def download_twitch_video(video_url, output_file):
     video_id = video_url.split("/")[-1]
-    print(f"Скачиваю из Twitch: {video_url} → {output_file}")
+    log_print(f"Скачиваю из Twitch: {video_url} → {output_file}")
     logging.info(f"Загрузка видео Twitch: {video_url}")
     cmd = [
         TWITCH_DOWNLOADER_PATH, "videodownload",
         "--id", video_id,
         "-o", output_file,
-        "--threads", "20",
+        "--quality", "source",
+        "--threads", "4",
         "--temp-path", "temp"
     ]
     os.makedirs("temp", exist_ok=True)
@@ -491,9 +496,9 @@ def download_twitch_video(video_url, output_file):
             m = patt.search(line)
             if m:
                 pct = int(m.group(1))
-                print(f"  [{output_file}] {pct:3d}%", end="\r")
+                log_print(f"  [{output_file}] {pct:3d}%", end="\r")
     proc.wait()
-    print(f"  [{output_file}] 100%                     ")
+    log_print(f"  [{output_file}] 100%                     ")
     logging.info(f"Файл {output_file} скачан.")
 
 ###############################################################################
@@ -545,7 +550,7 @@ def main(start_row=1, end_row=None, do_vk=True, do_youtube=True, max_uploads=99,
         print(f"Не найден {STREAMS_FILE}. Используйте флаг -last <username> <count> для автогенерации.")
         return
 
-    print("Очистка временных .mp4 файлов перед запуском...")
+    log_print("Очистка временных .mp4 файлов перед запуском...")
     for f in os.listdir():
         if f.endswith(".mp4"):
             try:
@@ -564,7 +569,7 @@ def main(start_row=1, end_row=None, do_vk=True, do_youtube=True, max_uploads=99,
         # 1) ссылка(и)
         link_cell = _get_link_from_row(row)
         if not link_cell:
-            print(f"Строка {index+1}: нет Twitch-ссылки, пропускаю.")
+            log_print(f"Строка {index+1}: нет Twitch-ссылки, пропускаю.")
             continue
         video_urls = str(link_cell).split()
 
@@ -577,12 +582,12 @@ def main(start_row=1, end_row=None, do_vk=True, do_youtube=True, max_uploads=99,
         # 4) теги (E => iloc[3] при “новой” разметке)
         tags = _pick_first_nonempty(row, [3, 4])
 
-        print(f"\n[{index+1}] Обрабатываю…")
+        log_print(f"\n[{index+1}] Обрабатываю…")
         video_files = []
         for url in video_urls:
             video_id = url.split("/")[-1] if "twitch.tv" in url else url
             out_file = f"{video_id}.mp4"
-            print(f"-> Скачивание Twitch ID: {video_id}    ({url})")
+            log_print(f"-> Скачивание Twitch ID: {video_id}    ({url})")
             download_twitch_video(url, out_file)
             video_files.append(out_file)
 
@@ -608,16 +613,16 @@ def main(start_row=1, end_row=None, do_vk=True, do_youtube=True, max_uploads=99,
         vk_ok = True
         if do_vk and vk_cfg:
             try:
-                print(f"-> Загрузка в VK: {video_file}")
+                log_print(f"-> Загрузка в VK: {video_file}")
                 privacy = "all"  # при желании можно маппить из столбца
                 upload_video_to_vk(
                     vk_cfg["vk_token"], vk_cfg["vk_group_id"], video_file,
                     vk_cfg["vk_album_id"], name, description_final, privacy_view=privacy
                 )
-                print(f"-> VK: файл {video_file} успешно загружен.")
+                log_print(f"-> VK: файл {video_file} успешно загружен.")
                 logging.info(f"VK upload ok for {video_file}")
             except Exception as e:
-                print(f"--!! Ошибка загрузки в VK: {e}")
+                log_print(f"--!! Ошибка загрузки в VK: {e}")
                 logging.error(f"Ошибка VK для {video_file}: {e}")
                 vk_ok = False
 
@@ -632,18 +637,18 @@ def main(start_row=1, end_row=None, do_vk=True, do_youtube=True, max_uploads=99,
 
             for i, up_file in enumerate(to_upload):
                 if uploaded_count >= max_uploads:
-                    print("Достигнут лимит YouTube загрузок (max-uploads).")
+                    log_print("Достигнут лимит YouTube загрузок (max-uploads).")
                     break
                 y_chapters = get_chapters(up_file)
                 y_desc = create_description_from_chapters(y_chapters) if y_chapters else description_final
                 yt_title = add_part_to_title(name, i + 1) if len(to_upload) > 1 else (name or os.path.basename(up_file))
                 try:
                     upload_to_youtube(up_file, yt_title, y_desc, tags)
-                    print(f"-> YouTube: {up_file} успешно загружен.")
+                    log_print(f"-> YouTube: {up_file} успешно загружен.")
                     logging.info(f"YouTube upload ok for {up_file}")
                     uploaded_count += 1
                 except Exception as e:
-                    print(f"--!! Ошибка загрузки на YouTube: {e}")
+                    log_print(f"--!! Ошибка загрузки на YouTube: {e}")
                     logging.error(f"Ошибка YouTube для {up_file}: {e}")
 
         # 3. Очистка временных файлов
@@ -655,11 +660,11 @@ def main(start_row=1, end_row=None, do_vk=True, do_youtube=True, max_uploads=99,
                         os.remove(f)
                     except Exception:
                         pass
-            print(f"Удалены все временные файлы для строки {index+1}.")
+            log_print(f"Удалены все временные файлы для строки {index+1}.")
         except Exception as e:
-            print(f"Ошибка при удалении файлов: {e}")
+            log_print(f"Ошибка при удалении файлов: {e}")
 
-    print("\nВыполнено!\n")
+    log_print("\nВыполнено!\n")
 
 ###############################################################################
 # CLI
