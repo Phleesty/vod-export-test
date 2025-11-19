@@ -392,42 +392,74 @@ def generate_streams_xlsx(username, count, output_file=STREAMS_FILE):
 # Загрузка в VK и YouTube
 ###############################################################################
 
-def upload_video_to_vk(token, group_id, video_path, album_id, name, description, privacy_view="all"):
-    logging.info(f"Загрузка файла {video_path} в VK...")
-    params = {
-        "access_token": token,
-        "v": "5.199",
-        "group_id": abs(int(group_id)),
-        "album_id": album_id,
-        "name": name or "",
-        "description": description or "",
-        "privacy_view": privacy_view,
-        "privacy_comment": "all",
-    }
-    rsp = requests.get("https://api.vk.ru/method/video.save", params=params, timeout=60).json()
-    if "error" in rsp:
-        raise RuntimeError(f"Ошибка VK API: {rsp['error']['error_msg']}")
-    upload_url = rsp["response"]["upload_url"]
+def upload_video_to_vk(token, group_id, video_path, album_id, name, description,
+                       privacy_view="all", max_retries=3, retry_delay=30):
+    """
+    Загрузка видео в VK с повторами.
+    Любая ошибка считается потенциально временной: делаем до max_retries попыток.
+    Если после этого не получилось — бросаем исключение и даём основному коду остановить скрипт.
+    """
+    attempt = 1
+    while True:
+        logging.info(f"Загрузка файла {video_path} в VK... Попытка {attempt}")
+        log_print(f"-> Загрузка в VK (попытка {attempt}): {video_path}")
 
-    # multipart upload
-    with open(video_path, "rb") as f:
+        params = {
+            "access_token": token,
+            "v": "5.199",
+            "group_id": abs(int(group_id)),
+            "album_id": album_id,
+            "name": name or "",
+            "description": description or "",
+            "privacy_view": privacy_view,
+            "privacy_comment": "all",
+        }
+
         try:
-            from requests_toolbelt import MultipartEncoder
-        except Exception:
-            # fallback to standard multipart
-            files = {"video_file": ("video_file", f, "video/mp4")}
-            up = requests.post(upload_url, files=files, timeout=None)
-            if not up.ok:
-                raise RuntimeError(f"Ошибка POST upload VK: {up.text}")
-        else:
-            enc = MultipartEncoder(fields={"video_file": ("video_file", f, "video/mp4")})
-            headers = {"Content-Type": enc.content_type}
-            up = requests.post(upload_url, data=enc, headers=headers, timeout=None)
-            if not up.ok:
-                raise RuntimeError(f"Ошибка POST upload VK: {up.text}")
+            rsp = requests.get(
+                "https://api.vk.ru/method/video.save",
+                params=params,
+                timeout=60
+            ).json()
 
-    logging.info(f"{video_path} успешно загружен в VK.")
-    return True
+            if "error" in rsp:
+                msg = rsp["error"].get("error_msg", "Unknown VK error")
+                raise RuntimeError(f"Ошибка VK API: {msg}")
+
+            upload_url = rsp["response"]["upload_url"]
+
+            # multipart upload
+            with open(video_path, "rb") as f:
+                try:
+                    from requests_toolbelt import MultipartEncoder
+                except Exception:
+                    files = {"video_file": ("video_file", f, "video/mp4")}
+                    up = requests.post(upload_url, files=files, timeout=None)
+                    if not up.ok:
+                        raise RuntimeError(f"Ошибка POST upload VK: {up.text}")
+                else:
+                    enc = MultipartEncoder(fields={"video_file": ("video_file", f, "video/mp4")})
+                    headers = {"Content-Type": enc.content_type}
+                    up = requests.post(upload_url, data=enc, headers=headers, timeout=None)
+                    if not up.ok:
+                        raise RuntimeError(f"Ошибка POST upload VK: {up.text}")
+
+            logging.info(f"{video_path} успешно загружен в VK.")
+            log_print(f"-> VK: файл {video_path} успешно загружен.")
+            return True
+
+        except Exception as e:
+            logging.error(f"Ошибка загрузки в VK (попытка {attempt}) для {video_path}: {e}")
+            log_print(f"--!! Ошибка загрузки в VK (попытка {attempt}) для {video_path}: {e}")
+
+            if attempt >= max_retries:
+                # После max_retries отдаём ошибку наверх: основной цикл остановится,
+                # файл останется на диске, можно будет руками разбираться/доливать.
+                raise RuntimeError(f"Не удалось загрузить {video_path} в VK после {max_retries} попыток: {e}")
+
+            log_print(f"Жду {retry_delay} секунд перед следующей попыткой VK...")
+            time.sleep(retry_delay)
+            attempt += 1
 
 def get_authenticated_youtube_service():
     if os.path.exists(TOKEN_FILE):
