@@ -6,4 +6,4 @@ openpyxl
 tqdm
 requests_toolbelt
 rich
-tmux
+speedtest-cli
