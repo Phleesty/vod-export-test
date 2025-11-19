@@ -54,9 +54,12 @@ def save_config(config: dict):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
 
-def log_print(msg: str):
+def log_print(msg: str, **kwargs):
+    """
+    Печатает сообщение с префиксом времени, поддерживает параметры print (end, flush и т.п.).
+    """
     now = datetime.now().strftime("[%H:%M:%S]")
-    print(f"{now} {msg}")
+    print(f"{now} {msg}", **kwargs)
 
 def setup_vkontakte_config():
     """
