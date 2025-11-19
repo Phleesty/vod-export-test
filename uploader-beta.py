@@ -485,7 +485,7 @@ def download_twitch_video(video_url, output_file):
         "--id", video_id,
         "-o", output_file,
         "--quality", "source",
-        "--threads", "4",
+        "--threads", "12",
         "--temp-path", "temp"
     ]
     os.makedirs("temp", exist_ok=True)
