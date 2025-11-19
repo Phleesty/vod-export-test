@@ -566,105 +566,99 @@ def main(start_row=1, end_row=None, do_vk=True, do_youtube=True, max_uploads=99,
     for index in range(start_index, end_index):
         row = df.iloc[index]
 
-        # 1) ссылка(и)
         link_cell = _get_link_from_row(row)
         if not link_cell:
-            log_print(f"Строка {index+1}: нет Twitch-ссылки, пропускаю.")
+            print(f"Строка {index+1}: нет Twitch-ссылки, пропускаю.")
             continue
         video_urls = str(link_cell).split()
 
-        # 2) заголовок (пытаемся взять из C => iloc[1], иначе iloc[2], иначе пусто)
         name = _pick_first_nonempty(row, [1, 2])
-
-        # 3) описание (D => iloc[2] при “новой” разметке)
         description = _pick_first_nonempty(row, [2, 3])
-
-        # 4) теги (E => iloc[3] при “новой” разметке)
         tags = _pick_first_nonempty(row, [3, 4])
 
-        log_print(f"\n[{index+1}] Обрабатываю…")
+        print(f"\n[{index+1}] Обрабатываю…")
         video_files = []
-        for url in video_urls:
-            video_id = url.split("/")[-1] if "twitch.tv" in url else url
-            out_file = f"{video_id}.mp4"
-            log_print(f"-> Скачивание Twitch ID: {video_id}    ({url})")
-            download_twitch_video(url, out_file)
-            video_files.append(out_file)
+        video_file = None
 
-        # если несколько — конкат
-        if len(video_files) > 1:
-            meta = create_concat_metadata(video_files)
-            final_file = f"concatenated_{index+1}.mp4"
-            concatenate_videos(video_files, final_file, meta)
-            for f in video_files:
-                try:
-                    os.remove(f)
-                except Exception:
-                    pass
-            video_file = final_file
-        else:
-            video_file = video_files[0]
-
-        # Опционально строим описание из глав
-        chapters = get_chapters(video_file)
-        description_final = create_description_from_chapters(chapters) if chapters else (description or "")
-
-        # 1. VK
-        vk_ok = True
-        if do_vk and vk_cfg:
-            try:
-                log_print(f"-> Загрузка в VK: {video_file}")
-                privacy = "all"  # при желании можно маппить из столбца
-                upload_video_to_vk(
-                    vk_cfg["vk_token"], vk_cfg["vk_group_id"], video_file,
-                    vk_cfg["vk_album_id"], name, description_final, privacy_view=privacy
-                )
-                log_print(f"-> VK: файл {video_file} успешно загружен.")
-                logging.info(f"VK upload ok for {video_file}")
-            except Exception as e:
-                log_print(f"--!! Ошибка загрузки в VK: {e}")
-                logging.error(f"Ошибка VK для {video_file}: {e}")
-                vk_ok = False
-
-        # 2. YouTube
-        if do_youtube and vk_ok:
-            to_upload = []
-            duration = get_video_duration(video_file)
-            if duration > MAX_ALLOWED_DURATION:
-                to_upload = split_single_video(video_file)
-            else:
-                to_upload = [video_file]
-
-            for i, up_file in enumerate(to_upload):
-                if uploaded_count >= max_uploads:
-                    log_print("Достигнут лимит YouTube загрузок (max-uploads).")
-                    break
-                y_chapters = get_chapters(up_file)
-                y_desc = create_description_from_chapters(y_chapters) if y_chapters else description_final
-                yt_title = add_part_to_title(name, i + 1) if len(to_upload) > 1 else (name or os.path.basename(up_file))
-                try:
-                    upload_to_youtube(up_file, yt_title, y_desc, tags)
-                    log_print(f"-> YouTube: {up_file} успешно загружен.")
-                    logging.info(f"YouTube upload ok for {up_file}")
-                    uploaded_count += 1
-                except Exception as e:
-                    log_print(f"--!! Ошибка загрузки на YouTube: {e}")
-                    logging.error(f"Ошибка YouTube для {up_file}: {e}")
-
-        # 3. Очистка временных файлов
         try:
-            files_for_cleanup = set(video_files + ([video_file] if video_file not in video_files else []))
-            for f in os.listdir():
-                if (f.startswith(video_file[:-4]) and f.endswith(".mp4")) or f in files_for_cleanup:
+            # 1. Скачивание всех частей
+            for url in video_urls:
+                video_id = url.split("/")[-1] if "twitch.tv" in url else url
+                out_file = f"{video_id}.mp4"
+                print(f"-> Скачивание Twitch ID: {video_id}    ({url})")
+                download_twitch_video(url, out_file)
+                video_files.append(out_file)
+
+            # 2. Конкат (если нужно)
+            if len(video_files) > 1:
+                meta = create_concat_metadata(video_files)
+                final_file = f"concatenated_{index+1}.mp4"
+                concatenate_videos(video_files, final_file, meta)
+                for f in video_files:
                     try:
                         os.remove(f)
                     except Exception:
                         pass
-            log_print(f"Удалены все временные файлы для строки {index+1}.")
-        except Exception as e:
-            log_print(f"Ошибка при удалении файлов: {e}")
+                video_file = final_file
+            else:
+                video_file = video_files[0]
 
-    log_print("\nВыполнено!\n")
+            # 3. Описание по главам
+            chapters = get_chapters(video_file)
+            description_final = create_description_from_chapters(chapters) if chapters else (description or "")
+
+            # 4. VK
+            if do_vk and vk_cfg:
+                print(f"-> Загрузка в VK: {video_file}")
+                privacy = "all"
+                upload_video_to_vk(
+                    vk_cfg["vk_token"], vk_cfg["vk_group_id"], video_file,
+                    vk_cfg["vk_album_id"], name, description_final, privacy_view=privacy
+                )
+                print(f"-> VK: файл {video_file} успешно загружен.")
+                logging.info(f"VK upload ok for {video_file}")
+
+            # 5. YouTube
+            if do_youtube:
+                to_upload = []
+                duration = get_video_duration(video_file)
+                if duration > MAX_ALLOWED_DURATION:
+                    to_upload = split_single_video(video_file)
+                else:
+                    to_upload = [video_file]
+
+                for i, up_file in enumerate(to_upload):
+                    if uploaded_count >= max_uploads:
+                        print("Достигнут лимит YouTube загрузок (max-uploads).")
+                        break
+                    y_chapters = get_chapters(up_file)
+                    y_desc = create_description_from_chapters(y_chapters) if y_chapters else description_final
+                    yt_title = add_part_to_title(name, i + 1) if len(to_upload) > 1 else (name or os.path.basename(up_file))
+                    upload_to_youtube(up_file, yt_title, y_desc, tags)
+                    print(f"-> YouTube: {up_file} успешно загружен.")
+                    logging.info(f"YouTube upload ok for {up_file}")
+                    uploaded_count += 1
+
+            # 6. Если дошли до сюда без исключений — можно чистить
+            try:
+                files_for_cleanup = set(video_files + ([video_file] if video_file and video_file not in video_files else []))
+                for f in os.listdir():
+                    if (video_file and f.startswith(video_file[:-4]) and f.endswith(".mp4")) or f in files_for_cleanup:
+                        try:
+                            os.remove(f)
+                        except Exception:
+                            pass
+                print(f"Удалены все временные файлы для строки {index+1}.")
+            except Exception as e:
+                print(f"Ошибка при удалении файлов: {e}")
+
+        except Exception as e:
+            # Любая ошибка на любом этапе — останавливаем весь процесс
+            print(f"\n--!! Критическая ошибка на строке {index+1}: {e}")
+            logging.error(f"Критическая ошибка на строке {index+1}: {e}")
+            print("Скрипт остановлен, временные файлы для этого видео НЕ удалены.")
+            break
+
 
 ###############################################################################
 # CLI
